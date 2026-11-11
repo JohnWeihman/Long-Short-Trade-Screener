@@ -1,0 +1,39 @@
+# Curated peer groups for the starting universe.
+# A blank peer_group means the company has no true peer in the universe yet:
+# it is neither ranked nor paired. Check any edit against the price data with
+#   python -m screener.scoring.peers
+#
+# Notes on judgment calls (from the price check, Nov 2023 - Nov 2026):
+# - COHR is a photonics company placed with the AI / data-center chip
+#   designers because that is what it trades with (NVDA, MRVL).
+# - processors is a group of three and its members barely move together.
+# - MPWR is a power-analog business but does not trade like the group.
+# - MU has no business peer here (its closest mover, LRCX, is a supplier).
+ticker,peer_group
+NVDA,ai_datacenter
+AVGO,ai_datacenter
+MRVL,ai_datacenter
+COHR,ai_datacenter
+AMD,processors
+INTC,processors
+QCOM,processors
+TXN,analog_power
+ADI,analog_power
+MCHP,analog_power
+ON,analog_power
+NXPI,analog_power
+MPWR,analog_power
+POWI,analog_power
+DIOD,analog_power
+SWKS,mixed_signal_connectivity
+CRUS,mixed_signal_connectivity
+SLAB,mixed_signal_connectivity
+SYNA,mixed_signal_connectivity
+LSCC,mixed_signal_connectivity
+AMAT,equipment_materials
+LRCX,equipment_materials
+KLAC,equipment_materials
+TER,equipment_materials
+ENTG,equipment_materials
+AMKR,equipment_materials
+MU,

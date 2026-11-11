@@ -165,6 +165,7 @@ short_term_investments:
     - ShortTermInvestments
     - AvailableForSaleSecuritiesCurrent
     - DebtSecuritiesAvailableForSaleExcludingAccruedInterestCurrent
+    - DebtSecuritiesCurrent
 
 receivables:
   kind: instant

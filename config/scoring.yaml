@@ -1,0 +1,55 @@
+# Settings for Stage 3 (fundamentals, metrics, scores).
+
+# Flat tax rate applied to operating income for ROIC. A company's own
+# effective rate is noisier (one-off items, restated tax lines).
+tax_rate: 0.21
+
+# A price older than this many days before the as-of date is flagged stale.
+max_price_age_days: 7
+
+# A balance-sheet value missing for the latest quarter may be taken from up
+# to this many quarters earlier (and is flagged when it is).
+max_balance_sheet_lag_quarters: 2
+
+# ---- Scoring -----------------------------------------------------------
+# Each metric is turned into a rank within the peer group, from 0 (worst)
+# to 1 (best). A pillar score is the average of its metric ranks; the
+# composite is the weighted average of the pillar scores.
+
+# Groups smaller than this are still scored but flagged as thin.
+min_group_size: 4
+# A pillar needs at least this many ranked metrics to get a score.
+min_metrics_per_pillar: 2
+# The composite needs at least this many pillars.
+min_pillars: 2
+
+pillar_weights:
+  valuation: 1.0
+  quality: 1.0
+  direction: 1.0
+
+# Metrics are defined in src/screener/scoring/metrics.py. Higher is better
+# unless lower_is_better is set. Valuation uses yields (the inverse of the
+# usual multiples) so that a loss-making company ranks last instead of
+# producing an undefined multiple.
+# fallback: the metric ranked in this slot for companies that lack the
+# main one (EBITDA needs a depreciation figure that some companies do not
+# report under a standard tag).
+pillars:
+  valuation:
+    - metric: ebitda_yield          # EBITDA / EV  (inverse of EV/EBITDA)
+      fallback: ebit_yield
+    - metric: earnings_yield        # net income / market cap  (inverse of P/E)
+    - metric: fcf_yield             # free cash flow / market cap
+    - metric: sales_yield           # revenue / EV  (inverse of EV/sales)
+  quality:
+    - metric: gross_margin
+    - metric: operating_margin
+    - metric: roic
+    - metric: net_debt_to_ebitda
+      lower_is_better: true
+      fallback: net_debt_to_ebit
+  direction:
+    - metric: operating_margin_change        # vs the same twelve months a year earlier
+    - metric: revenue_growth_acceleration    # this year's growth minus last year's
+    - metric: fcf_margin_change

@@ -6,9 +6,9 @@ where one company scores well and a close peer scores poorly.
 
 Data is free only: SEC EDGAR for fundamentals and filings, yfinance for prices.
 
-**Status: Stages 1 and 2 (raw data pull; cleaned quarterly and annual
-financials).** Scoring, pairing, memos, the Streamlit app and the scheduled
-pipeline come later. See
+**Status: Stages 1 to 3 (raw data pull; cleaned quarterly and annual
+financials; peer groups and scores).** Pairing, memos, the Streamlit app and
+the scheduled pipeline come later. See
 [CLAUDE.md](CLAUDE.md) for the full design, constraints and known data quirks.
 
 ## Setup
@@ -116,6 +116,35 @@ python scripts/trace_metric.py KLAC operating_income --annual
 reported periods and raw EDGAR facts (tag, filing, accession number) it was
 built from. Validation never changes a value; it only reports.
 
+## Score the companies
+
+```
+python -m screener.scoring.peers                 # check peer groups against price behaviour
+python -m screener.scoring.build                 # as of today
+python -m screener.scoring.build --as-of 2026-06-30
+```
+
+Writes to `data/scores/`:
+
+| Table | Contents |
+|-------|----------|
+| `peer_groups` | ticker -> peer group, from `config/peer_groups.csv` |
+| `fundamentals` | market cap, net debt, enterprise value, trailing-twelve-month lines, EBITDA, free cash flow, ROIC |
+| `metrics` | the ratios: valuation yields, margins, leverage, direction, plus display multiples |
+| `metric_ranks` | each metric's value and rank within the peer group (0 worst, 1 best) |
+| `scores` | pillar scores (valuation, quality, direction), composite, rank in group |
+
+Everything is computed "as of" a date: only quarters filed by then, and the
+last price on or before it. Pillar membership, weights and thresholds are in
+`config/scoring.yaml`; the ratio formulas are in `src/screener/scoring/metrics.py`.
+
+```
+python scripts/show_scores.py                    # every group, ranked
+python scripts/show_scores.py analog_power
+python scripts/show_scores.py TXN                # the metrics and ranks behind one score
+python scripts/show_fundamentals.py TXN          # market cap, EV, EBITDA, ROIC line by line
+```
+
 ## Tests
 
 ```
@@ -131,7 +160,10 @@ config/universe.csv     tickers to pull
 config/tag_map.yaml     metric -> XBRL tags and fallback formulas
 src/screener/data/      fetching and the local cache
 src/screener/cleaning/  raw facts -> clean quarterly and annual financials
-src/screener/scoring/  pairing/  memos/  app/     later stages
+config/peer_groups.csv  ticker -> peer group
+config/scoring.yaml     pillars, weights and thresholds
+src/screener/scoring/   peer groups, fundamentals, ratios, ranks and scores
+src/screener/pairing/  memos/  app/     later stages
 scripts/                command-line helpers
 tests/
 data/                   local cache (git-ignored)

@@ -31,7 +31,8 @@ the stage the user asks for.**
 |-------|-------|--------|
 | 1 | Project setup; raw data pull (ticker->CIK, companyfacts, submissions, prices) into local cache; hand-check script | built, not yet committed |
 | 2 | Cleaning: tag fallback mapping, Q4 derivation, restatement dedup, filer-type handling | built, not yet committed. Known limits are listed under "Known problems" below and in the `validation` table |
-| 3+ | Peer groups, scoring, pairing, memos, Streamlit app, GitHub Actions | not started |
+| 3 | Peer groups, derived fundamentals, metrics, within-group scores | built on branch `stage-3-scoring`, not yet committed; ranked tables awaiting the user's review |
+| 4+ | Pairing (correlation filter, hedge ratios), memos, Streamlit app, GitHub Actions | not started |
 
 ## Hard constraints
 
@@ -81,7 +82,18 @@ src/screener/cleaning/     Stage 2
   validate.py              consistency checks -> `validation` table (reports, never corrects)
   trace.py                 the reported periods and raw facts behind one cleaned value
   build.py                 rebuild data/clean/*: python -m screener.cleaning.build
-src/screener/scoring/  pairing/  memos/  app/     later stages
+config/peer_groups.csv     curated ticker -> peer_group (blank = unplaced, not ranked)
+config/scoring.yaml        tax rate and staleness limits for Stage 3
+src/screener/scoring/      Stage 3
+  peers.py                 peer file loader + residual-return correlation check
+  fundamentals.py          as-of fundamentals: market cap, net debt, EV, TTM lines, EBITDA, FCF, ROIC
+  metrics.py               ratios from fundamentals (valuation as yields; display multiples)
+  scores.py                rank within peer group -> pillar scores -> composite
+  report.py                plain-text group table and per-company detail
+  build.py                 writes data/scores/*: python -m screener.scoring.build [--as-of DATE]
+scripts/show_fundamentals.py   one company's fundamentals line by line (hand check)
+scripts/show_scores.py         ranked group tables, or the ranks behind one company's score
+src/screener/pairing/  memos/  app/     later stages
 scripts/check_company.py   prints revenue / net income / shares for latest FY (raw data)
 scripts/trace_metric.py    a cleaned metric next to the raw facts behind it
 tests/                     pytest, no network access
@@ -222,6 +234,45 @@ so moving to bulk downloads only changes the fetcher.
 - yfinance `close` is split-adjusted but not dividend-adjusted; `adj_close`
   is adjusted for both. Neither is the price actually printed on the day.
 
+## Stage 3 decisions and findings
+
+- User decisions (2026-11): curated peer groups, equal pillar weights, flat
+  21% tax rate for ROIC, latest restated values for current scores
+  (first-reported reserved for backtests), unplaced companies left unranked.
+- Peer groups: ai_datacenter (NVDA, AVGO, MRVL, COHR), processors (AMD,
+  INTC, QCOM - thin), analog_power, mixed_signal_connectivity,
+  equipment_materials (incl. AMKR); MU unplaced. The check removes the
+  sector's weekly move and correlates the residuals: 25 of 26 placed
+  companies are most correlated with their own group (MPWR is not).
+- Everything in scoring is "as of" a date: only quarters with known_on <=
+  as_of, and the last price <= as_of. TTM is recomputed from quarters, not
+  read from `val_ttm`.
+- Net debt = short + long-term debt - cash - short-term investments. Items a
+  company does not report are taken as 0 and noted. Leases, preferred stock
+  and minority interests are excluded (understates EV for COHR, INTC).
+- EBITDA is blank when D&A is missing (COHR, TXN, LSCC, SLAB, SYNA as of
+  2026-11): rank those on EV/EBIT.
+- Open: KLAC (3,176M) and TER (96M) hold securities under
+  `AvailableForSaleSecuritiesDebtSecurities`, which is not limited to
+  current holdings and so is not in the tag map; their net debt is
+  overstated by that much. NVDA's 42.8B of equity securities
+  (`EquitySecuritiesFvNi`) is also not counted as cash-like.
+- ROIC is distorted when invested capital moves sharply within a year
+  (NVDA: 52B -> 206B, ROIC 121%).
+- Scoring: each metric is a percentile rank within the peer group (0 worst,
+  1 best, ties averaged); pillar = mean of its ranks (needs 2); composite =
+  weighted mean of pillars (needs 2). Ranks are robust to outliers, so no
+  clipping is applied. Valuation is ranked on yields (EBITDA/EV, earnings /
+  market cap, FCF / market cap, revenue/EV) so losses rank last.
+- Fallback slots: a company lacking EBITDA is ranked on EBIT yield and net
+  debt/EBIT in those slots, among all group members. That mixes two scales
+  within one slot; `metric_ranks.used_metric` records which was used.
+- Known weaknesses of the composite: equal weights let strong direction
+  offset extreme valuation (LSCC ranks 2nd of 5 at 225x EV/EBIT); groups of
+  3-5 give coarse ranks; `processors` is flagged thin.
+- Data tables for Stage 4: `data/scores/scores.parquet` (composite, pillars,
+  rank_in_group per ticker) and `metric_ranks.parquet`.
+
 ## Working rules
 
 - Propose a plan first and wait for the user's approval before writing code.
@@ -248,4 +299,8 @@ python -m screener.cleaning.build                # rebuild data/clean (refresh p
 python -m screener.cleaning.validate             # findings; --ticker X, --check NAME, --limit N
 python -m screener.cleaning.audit                # tag-map coverage matrix
 python scripts/trace_metric.py NVDA revenue --fy 2026 --quarter 4
+python -m screener.scoring.peers                 # peer groups vs residual return correlation
+python -m screener.scoring.build                 # fundamentals, metrics, ranks, scores (--as-of DATE)
+python scripts/show_scores.py [GROUP|TICKER]
+python scripts/show_fundamentals.py NVDA
 ```
