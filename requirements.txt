@@ -1,0 +1,13 @@
+pandas>=2.2
+pyarrow>=17
+duckdb>=1.1
+requests>=2.32
+python-dotenv>=1.0
+pyyaml>=6
+yfinance>=0.2.50
+pytest>=8
+
+# streamlit is added when the web app stage is built.
+
+# Install this project itself (src/screener) in editable mode.
+-e .

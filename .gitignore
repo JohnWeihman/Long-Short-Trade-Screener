@@ -1,0 +1,21 @@
+# Secrets
+.env
+.streamlit/secrets.toml
+
+# Local data cache (leading slash: only the top-level folder, not src/screener/data/)
+/data/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

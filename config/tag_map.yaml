@@ -1,0 +1,299 @@
+# Standardized metric -> XBRL tags, in priority order.
+#
+# For each company and period, the first tag in the list that has a value
+# wins (fallback is per period, not per company, because companies change
+# tags over time).
+#
+# kind:
+#   duration  income statement / cash flow item covering a period
+#   instant   balance sheet item at a period-end date
+#   cover     10-K/10-Q cover-page value, dated shortly AFTER the period end
+# unit: the XBRL unit to read (USD, shares, USD/shares)
+# optional: true  -> a company can legitimately not report this (no debt, no
+#                    dividends, fabless with no inventory); gaps are not errors
+# Tags are us-gaap unless written as taxonomy:Tag.
+#
+# formulas: tried in order, only when none of the tags has a value. Results
+# are flagged as derived. Each formula is
+#     sum(add) - sum(subtract)  [+ add_if_present] [- subtract_if_present]
+# where a term is another metric's name (lowercase) or a raw tag (CamelCase).
+# All add/subtract terms must have data for the formula to apply.
+#
+# Do NOT list tags that mean something different as fallbacks: a wrong value
+# is worse than a gap. (CommonStockSharesIssued was removed for this reason:
+# it includes treasury shares.)
+
+# ---- Income statement -------------------------------------------------
+revenue:
+  kind: duration
+  unit: USD
+  tags:
+    - Revenues
+    - RevenueFromContractWithCustomerExcludingAssessedTax
+    - RevenueFromContractWithCustomerIncludingAssessedTax
+    - SalesRevenueNet
+    - SalesRevenueGoodsNet
+
+cost_of_revenue:
+  kind: duration
+  unit: USD
+  tags:
+    - CostOfRevenue
+    - CostOfGoodsAndServicesSold
+    - CostOfGoodsSold
+
+gross_profit:
+  kind: duration
+  unit: USD
+  tags:
+    - GrossProfit
+  formulas:
+    - add: [revenue]
+      subtract: [cost_of_revenue]
+
+rd_expense:
+  kind: duration
+  unit: USD
+  tags:
+    - ResearchAndDevelopmentExpense
+    - ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost
+
+sga_expense:
+  kind: duration
+  unit: USD
+  tags:
+    - SellingGeneralAndAdministrativeExpense
+  formulas:
+    - add: [SellingAndMarketingExpense, GeneralAndAdministrativeExpense]
+
+# Companies with no operating-income line (KLAC, COHR) get revenue less the
+# three main cost lines. This leaves out restructuring, impairments and other
+# operating items those companies report on separate lines.
+operating_income:
+  kind: duration
+  unit: USD
+  tags:
+    - OperatingIncomeLoss
+  formulas:
+    - add: [revenue]
+      subtract: [cost_of_revenue, rd_expense, sga_expense]
+
+# Many acquisitive companies split this into depreciation plus amortization
+# of acquired intangibles. Depreciation ALONE is deliberately not a fallback:
+# when the amortization sits under a company-specific tag (which companyfacts
+# does not carry) it understates D&A by multiples (AVGO FY2022: 529M of
+# depreciation vs billions of amortization). A gap is better.
+depreciation_amortization:
+  kind: duration
+  unit: USD
+  tags:
+    - DepreciationDepletionAndAmortization
+    - DepreciationAndAmortization
+    - DepreciationAmortizationAndAccretionNet
+  formulas:
+    - add: [OtherDepreciationAndAmortization, AmortizationOfIntangibleAssets]
+    - add: [OtherDepreciationAndAmortization, AdjustmentForAmortization]
+    - add: [Depreciation, AmortizationOfIntangibleAssets]
+
+interest_expense:
+  kind: duration
+  unit: USD
+  optional: true
+  tags:
+    - InterestExpense
+    - InterestExpenseNonoperating
+    - InterestAndDebtExpense
+    - InterestExpenseOperating
+    - InterestExpenseDebt
+
+pretax_income:
+  kind: duration
+  unit: USD
+  tags:
+    - IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest
+    - IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments
+
+income_tax:
+  kind: duration
+  unit: USD
+  tags:
+    - IncomeTaxExpenseBenefit
+
+net_income:
+  kind: duration
+  unit: USD
+  tags:
+    - NetIncomeLoss
+    - ProfitLoss
+    - NetIncomeLossAvailableToCommonStockholdersBasic
+
+# Per-share and weighted-average figures do not add up across quarters, so
+# a missing quarter cannot be found by subtraction like the lines above:
+#   combine: average  a full-year weighted average is (roughly) the mean of
+#                     the four quarterly ones, so Q4 = 4 x FY - (Q1+Q2+Q3)
+#   combine: ratio    a missing quarter is numerator / denominator
+eps_diluted:
+  kind: duration
+  unit: USD/shares
+  combine: ratio
+  ratio_of: [net_income, diluted_shares]
+  tags:
+    - EarningsPerShareDiluted
+
+diluted_shares:
+  kind: duration
+  unit: shares
+  combine: average
+  tags:
+    - WeightedAverageNumberOfDilutedSharesOutstanding
+
+# ---- Balance sheet ----------------------------------------------------
+cash:
+  kind: instant
+  unit: USD
+  tags:
+    - CashAndCashEquivalentsAtCarryingValue
+    - CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents
+
+short_term_investments:
+  kind: instant
+  unit: USD
+  optional: true
+  tags:
+    - MarketableSecuritiesCurrent
+    - AvailableForSaleSecuritiesDebtSecuritiesCurrent
+    - ShortTermInvestments
+    - AvailableForSaleSecuritiesCurrent
+    - DebtSecuritiesAvailableForSaleExcludingAccruedInterestCurrent
+
+receivables:
+  kind: instant
+  unit: USD
+  tags:
+    - AccountsReceivableNetCurrent
+    - ReceivablesNetCurrent
+    - AccountsNotesAndLoansReceivableNetCurrent
+
+inventory:
+  kind: instant
+  unit: USD
+  optional: true
+  tags:
+    - InventoryNet
+
+current_assets:
+  kind: instant
+  unit: USD
+  tags:
+    - AssetsCurrent
+
+total_assets:
+  kind: instant
+  unit: USD
+  tags:
+    - Assets
+
+current_liabilities:
+  kind: instant
+  unit: USD
+  tags:
+    - LiabilitiesCurrent
+
+short_term_debt:
+  kind: instant
+  unit: USD
+  optional: true
+  # DebtCurrent is the total. Otherwise the pieces are added up: they are
+  # components (current part of long-term debt, commercial paper, ...), not
+  # alternatives, so "first tag wins" would drop some of the debt.
+  tags:
+    - DebtCurrent
+  formulas:
+    - add_if_present:
+        - LongTermDebtCurrent
+        - ShortTermBorrowings
+        - CommercialPaper
+        - ConvertibleNotesPayableCurrent
+    - add: [LongTermDebtAndCapitalLeaseObligationsCurrent]
+
+# Noncurrent portion. LongTermDebt is the total including the current part.
+long_term_debt:
+  kind: instant
+  unit: USD
+  optional: true
+  tags:
+    - LongTermDebtNoncurrent
+    - LongTermDebtAndCapitalLeaseObligations
+    - ConvertibleNotesPayableNoncurrent
+  formulas:
+    - add: [LongTermDebt]
+      subtract_if_present: [LongTermDebtCurrent]
+
+total_liabilities:
+  kind: instant
+  unit: USD
+  tags:
+    - Liabilities
+  formulas:
+    - add: [LiabilitiesCurrent, LiabilitiesNoncurrent]
+    - add: [LiabilitiesAndStockholdersEquity]
+      subtract: [StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest]
+    - add: [LiabilitiesAndStockholdersEquity]
+      subtract: [StockholdersEquity]
+
+equity:
+  kind: instant
+  unit: USD
+  tags:
+    - StockholdersEquity
+    - StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest
+
+shares_outstanding:
+  kind: instant
+  unit: shares
+  tags:
+    - CommonStockSharesOutstanding
+
+shares_outstanding_cover:
+  kind: cover
+  unit: shares
+  tags:
+    - dei:EntityCommonStockSharesOutstanding
+
+# ---- Cash flow --------------------------------------------------------
+operating_cash_flow:
+  kind: duration
+  unit: USD
+  tags:
+    - NetCashProvidedByUsedInOperatingActivities
+    - NetCashProvidedByUsedInOperatingActivitiesContinuingOperations
+
+capex:
+  kind: duration
+  unit: USD
+  tags:
+    - PaymentsToAcquirePropertyPlantAndEquipment
+    - PaymentsToAcquireProductiveAssets
+
+stock_comp:
+  kind: duration
+  unit: USD
+  tags:
+    - ShareBasedCompensation
+    - AllocatedShareBasedCompensationExpense
+
+dividends_paid:
+  kind: duration
+  unit: USD
+  optional: true
+  tags:
+    - PaymentsOfDividendsCommonStock
+    - PaymentsOfDividends
+    - PaymentsOfOrdinaryDividends
+
+buybacks:
+  kind: duration
+  unit: USD
+  optional: true
+  tags:
+    - PaymentsForRepurchaseOfCommonStock
