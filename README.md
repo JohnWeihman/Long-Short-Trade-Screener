@@ -6,9 +6,9 @@ where one company scores well and a close peer scores poorly.
 
 Data is free only: SEC EDGAR for fundamentals and filings, yfinance for prices.
 
-**Status: Stages 1 to 3 (raw data pull; cleaned quarterly and annual
-financials; peer groups and scores).** Pairing, memos, the Streamlit app and
-the scheduled pipeline come later. See
+**Status: Stages 1 to 4 (raw data pull; cleaned quarterly and annual
+financials; peer groups and scores; pairs with hedge ratios).** Memos, the
+Streamlit app and the scheduled pipeline come later. See
 [CLAUDE.md](CLAUDE.md) for the full design, constraints and known data quirks.
 
 ## Setup
@@ -145,6 +145,32 @@ python scripts/show_scores.py TXN                # the metrics and ranks behind 
 python scripts/show_fundamentals.py TXN          # market cap, EV, EBITDA, ROIC line by line
 ```
 
+## Build the pairs
+
+```
+python -m screener.pairing.build
+```
+
+Uses the scores table's as-of date. Writes to `data/pairs/`:
+
+| Table | Contents |
+|-------|----------|
+| `pairs` | every candidate pair within a peer group: score gaps, correlation, betas, hedge ratio, spread statistics, whether it passes, and why not |
+| `pair_spreads` | daily hedged-spread history for the passing pairs |
+
+A pair is long the higher composite score and short the lower. It passes
+when the score gap is large enough, enough pillars favor the long, and the
+two stocks' weekly returns are correlated enough. The hedge ratio (dollars
+short per dollar long) is the long's beta divided by the short's, measured
+against an equal-weighted index of the universe. Thresholds are in
+`config/pairing.yaml`.
+
+```
+python scripts/show_pairs.py                  # ranked pairs that pass
+python scripts/show_pairs.py --all            # every candidate, with the reason it failed
+python scripts/show_pairs.py TER AMAT         # one pair side by side, with the hedge arithmetic
+```
+
 ## Tests
 
 ```
@@ -163,7 +189,9 @@ src/screener/cleaning/  raw facts -> clean quarterly and annual financials
 config/peer_groups.csv  ticker -> peer group
 config/scoring.yaml     pillars, weights and thresholds
 src/screener/scoring/   peer groups, fundamentals, ratios, ranks and scores
-src/screener/pairing/  memos/  app/     later stages
+config/pairing.yaml     pair thresholds and windows
+src/screener/pairing/   candidate pairs, correlation filter, hedge ratios, spreads
+src/screener/memos/  app/     later stages
 scripts/                command-line helpers
 tests/
 data/                   local cache (git-ignored)

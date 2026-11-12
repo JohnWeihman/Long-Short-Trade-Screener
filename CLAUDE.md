@@ -31,8 +31,9 @@ the stage the user asks for.**
 |-------|-------|--------|
 | 1 | Project setup; raw data pull (ticker->CIK, companyfacts, submissions, prices) into local cache; hand-check script | built, not yet committed |
 | 2 | Cleaning: tag fallback mapping, Q4 derivation, restatement dedup, filer-type handling | built, not yet committed. Known limits are listed under "Known problems" below and in the `validation` table |
-| 3 | Peer groups, derived fundamentals, metrics, within-group scores | built on branch `stage-3-scoring`, not yet committed; ranked tables awaiting the user's review |
-| 4+ | Pairing (correlation filter, hedge ratios), memos, Streamlit app, GitHub Actions | not started |
+| 3 | Peer groups, derived fundamentals, metrics, within-group scores | built and committed (on `main`) |
+| 4 | Candidate pairs, correlation filter, beta-adjusted hedge ratios, spread series | built on branch `stage-4-pairing`, not yet committed |
+| 5+ | Memos from 10-K sections and 8-K press releases, Streamlit app, GitHub Actions | not started |
 
 ## Hard constraints
 
@@ -93,7 +94,16 @@ src/screener/scoring/      Stage 3
   build.py                 writes data/scores/*: python -m screener.scoring.build [--as-of DATE]
 scripts/show_fundamentals.py   one company's fundamentals line by line (hand check)
 scripts/show_scores.py         ranked group tables, or the ranks behind one company's score
-src/screener/pairing/  memos/  app/     later stages
+config/pairing.yaml        Stage 4 thresholds and windows
+src/screener/pairing/      Stage 4
+  config.py                loads config/pairing.yaml
+  candidates.py            every within-group pair, long the higher composite; records gap/pillar rules
+  stats.py                 correlation, beta, hedge ratio, share ratio
+  spread.py                daily hedged spread, z-score and recent moves
+  report.py                plain-text ranked table and pair detail
+  build.py                 writes data/pairs/*: python -m screener.pairing.build
+scripts/show_pairs.py          ranked pairs, all candidates with reasons, or one pair in detail
+src/screener/memos/  app/     later stages
 scripts/check_company.py   prints revenue / net income / shares for latest FY (raw data)
 scripts/trace_metric.py    a cleaned metric next to the raw facts behind it
 tests/                     pytest, no network access
@@ -273,6 +283,29 @@ so moving to bulk downloads only changes the fetcher.
 - Data tables for Stage 4: `data/scores/scores.parquet` (composite, pillars,
   rank_in_group per ticker) and `metric_ranks.parquet`.
 
+## Stage 4 decisions and findings
+
+- User decisions (2026-11): beta benchmark is the equal-weighted universe
+  index (sector-neutral, no extra data); minimum composite gap 0.25;
+  minimum weekly correlation 0.50 over 104 weeks; at least 2 of 3 pillars
+  must favor the long; thin groups included but flagged.
+- Hedge ratio = beta_long / beta_short = dollars short per $1 long. Share
+  ratio = hedge ratio x price_long / price_short. `pair_beta` (long
+  regressed on short) is stored for comparison only.
+- The spread series applies TODAY's hedge ratio to the whole history, reset
+  daily. It shows how the pair as it would be put on now has behaved; it is
+  not a backtest. Positive spread move / z-score = long already outperformed.
+- Pairs use the as-of date stored in the scores table; there is no separate
+  --as-of on the pairing build.
+- `pairs.parquet` keeps every candidate with `passes` and `reasons`; nothing
+  is dropped. As of 2026-11-11: 62 candidates, 22 clear gap + pillars, 15
+  also clear correlation. Seven fail on correlation, several narrowly
+  (0.47-0.50), including every ai_datacenter pair.
+- Raw weekly correlations in this universe over two years are only
+  0.38-0.68, lower than the "all semis move together" intuition.
+- Not built: cointegration, liquidity/borrow screens, earnings dates,
+  backtesting. The last weekly bar can be a partial week.
+
 ## Working rules
 
 - Propose a plan first and wait for the user's approval before writing code.
@@ -303,4 +336,6 @@ python -m screener.scoring.peers                 # peer groups vs residual retur
 python -m screener.scoring.build                 # fundamentals, metrics, ranks, scores (--as-of DATE)
 python scripts/show_scores.py [GROUP|TICKER]
 python scripts/show_fundamentals.py NVDA
+python -m screener.pairing.build                 # pairs for the scores' as-of date
+python scripts/show_pairs.py [--all | LONG SHORT]
 ```

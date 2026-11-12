@@ -1,0 +1,26 @@
+# Settings for Stage 4 (pairs, correlation filter, hedge ratios).
+
+# ---- Which pairs qualify ------------------------------------------------
+# Long the higher composite score, short the lower, within one peer group.
+# The gap between the two composites must be at least this (scores run 0-1).
+min_composite_gap: 0.25
+# At least this many of the three pillars must favor the long.
+min_pillars_favoring_long: 2
+
+# ---- Correlation filter -------------------------------------------------
+# Correlation of weekly returns (dividends reinvested) over this window.
+correlation_window_weeks: 104
+min_overlap_weeks: 52
+min_correlation: 0.50
+
+# ---- Hedge ratio --------------------------------------------------------
+# Each stock's beta is measured against this benchmark over the same window:
+#   universe_equal_weight   the average weekly return of every company in
+#                           config/peer_groups.csv (sector-neutral, no extra data)
+beta_benchmark: universe_equal_weight
+
+# ---- Spread series ------------------------------------------------------
+# Trading days of hedged-spread history to save for charts.
+spread_history_days: 756
+# Trading days used for the "where is the spread now" z-score.
+spread_zscore_window_days: 252
