@@ -1,10 +1,29 @@
 # Settings for Stage 5 (memos).
+#
+# Every passing pair gets a template memo, rebuilt on every run (free, and
+# its numbers are always current). The model writer below is optional.
 
-# Memos are written for this many of the top-ranked passing pairs.
-top_pairs: 10
+# Model-written analyst views for this many of the top-ranked pairs.
+ai_pairs: 10
 
 # Earnings press releases (8-K item 2.02) fetched per company, newest first.
 press_release_quarters: 4
 
 # Risk-factor headings quoted per company.
 risk_headings: 3
+
+# Optional model-written analyst view (Anthropic API). Used only when
+# enabled here AND ANTHROPIC_API_KEY is set in .env. A pair's view is
+# regenerated only when the pair is new, either company files a 10-K, 10-Q
+# or earnings 8-K, or a company's deal status changes; otherwise the cached
+# view is reused at no cost. Every figure in it is checked against the
+# material it was given; a view that fails the check, or any API failure,
+# leaves the pair with its template memo only.
+model_writer:
+  enabled: true
+  model: claude-haiku-5-5
+  effort: medium        # low | medium | high | xhigh | max
+  max_words: 300
+  # For the run log's cost estimate only (USD per million tokens).
+  input_price_per_million: 0.10
+  output_price_per_million: 0.50

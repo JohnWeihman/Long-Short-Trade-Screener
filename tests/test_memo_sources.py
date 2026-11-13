@@ -268,13 +268,14 @@ def test_press_release_without_an_outlook_heading_falls_back_to_expectation_sent
 
 def test_memo_config_loads_and_top_pair_tickers():
     cfg = load_memo_config()
-    assert (cfg.top_pairs, cfg.press_release_quarters, cfg.risk_headings) == (10, 4, 3)
+    assert (cfg.ai_pairs, cfg.press_release_quarters, cfg.risk_headings) == (10, 4, 3)
     pairs = pd.DataFrame({
         "long": ["A", "A", "C", "E"], "short": ["B", "C", "D", "F"],
         "passes": [True, True, False, True], "rank": pd.array([2, 1, None, 3], dtype="Int64"),
     })
     assert top_pair_tickers(pairs, 2) == ["A", "C", "B"]
     assert top_pair_tickers(pairs, 10) == ["A", "C", "B", "E", "F"]
+    assert top_pair_tickers(pairs) == ["A", "C", "B", "E", "F"]  # every passing pair
 
 
 def test_select_documents_picks_main_10k_document_and_8k_submissions():

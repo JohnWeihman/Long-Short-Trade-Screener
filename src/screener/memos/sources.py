@@ -7,7 +7,7 @@ sections    one row per extracted section, with `ok` / `problem`
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +27,7 @@ from screener.data.filings import (
 )
 from screener.data.rawfacts import filing_url
 from screener.memos.extract import emphasized_lines, html_to_lines, risk_headings, split_10k, split_press_release
+from screener.memos.model_writer import ModelWriterConfig, parse_model_writer_config
 
 DEFAULT_MEMOS = config.PROJECT_ROOT / "config" / "memos.yaml"
 DOCUMENT_COLUMNS = ["cik10", "ticker", "kind", "accn", "form", "filed", "report_date", "file_name", "url", "status"]
@@ -36,9 +37,10 @@ ANNUAL, EARNINGS = "annual_report", "earnings_release"
 
 @dataclass(frozen=True)
 class MemoConfig:
-    top_pairs: int = 10
+    ai_pairs: int = 10  # model-written narratives for this many top pairs; template memos for every passing pair
     press_release_quarters: int = 4
     risk_headings: int = 5
+    model_writer: ModelWriterConfig = field(default_factory=ModelWriterConfig)
 
 
 def load_memo_config(path: Path = DEFAULT_MEMOS) -> MemoConfig:
@@ -47,12 +49,15 @@ def load_memo_config(path: Path = DEFAULT_MEMOS) -> MemoConfig:
     unknown = set(raw) - {f.name for f in fields(MemoConfig)}
     if unknown:
         raise ValueError(f"unknown memo settings: {sorted(unknown)}")
+    raw["model_writer"] = parse_model_writer_config(raw.get("model_writer"))
     return MemoConfig(**raw)
 
 
-def top_pair_tickers(pairs: pd.DataFrame, count: int) -> list[str]:
-    """Tickers in the top `count` passing pairs, in rank order, each once."""
-    top = pairs[pairs["passes"]].sort_values("rank").head(count)
+def top_pair_tickers(pairs: pd.DataFrame, count: int | None = None) -> list[str]:
+    """Tickers in the top `count` passing pairs (all of them when count is
+    None), in rank order, each once."""
+    top = pairs[pairs["passes"]].sort_values("rank")
+    top = top if count is None else top.head(count)
     return list(dict.fromkeys(top[["long", "short"]].to_numpy().ravel().tolist()))
 
 

@@ -25,6 +25,12 @@ def data_dir() -> Path:
     return Path(override) if override else PROJECT_ROOT / "data"
 
 
+def anthropic_api_key_present() -> bool:
+    """True when an Anthropic API key is configured (in .env or the environment).
+    The key itself is read by the Anthropic SDK; it is never handled here."""
+    return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+
+
 def sec_user_agent() -> str:
     """The User-Agent the SEC requires: a real name and contact email."""
     value = (os.environ.get("SEC_USER_AGENT") or "").strip()

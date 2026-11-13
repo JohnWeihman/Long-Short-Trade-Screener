@@ -6,6 +6,7 @@ python-dotenv>=1.0
 pyyaml>=6
 beautifulsoup4>=4.12
 lxml>=5
+anthropic>=2.8
 yfinance>=0.2.50
 pytest>=8
 

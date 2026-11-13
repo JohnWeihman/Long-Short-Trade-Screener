@@ -33,7 +33,7 @@ the stage the user asks for.**
 | 2 | Cleaning: tag fallback mapping, Q4 derivation, restatement dedup, filer-type handling | built and committed (on `main`). Known limits are listed under "Known problems" below and in the `validation` table |
 | 3 | Peer groups, derived fundamentals, metrics, within-group scores | built and committed (on `main`) |
 | 4 | Candidate pairs, correlation filter, beta-adjusted hedge ratios, spread series | built and committed (on `main`) |
-| 5 | Memos from 10-K sections and 8-K earnings press releases | in progress on branch `stage-5-memos`, not committed: filing fetch, section extraction, deal flags, fact sheet and template memos done; the optional model-written layer is not built |
+| 5 | Memos from 10-K sections and 8-K earnings press releases | built on branch `stage-5-memos`; template layer committed (dd74eff); peer medians, quarterly trends, Haiku AI layer, run log and `screener.pipeline` not yet committed. AI layer not yet run against the API (no ANTHROPIC_API_KEY on this machine as of 2026-11-13) |
 | 6+ | Streamlit app, GitHub Actions | not started |
 
 ## Hard constraints
@@ -113,6 +113,8 @@ src/screener/memos/        Stage 5
   sources.py               select, fetch and extract the documents for the top pairs' companies
   facts.py                 fact sheet per pair: every number a memo may use (plain JSON-able data)
   write.py                 template memo (Markdown) from fact sheet + filing excerpts; inputs hash
+  model_writer.py          optional AI analyst view (Haiku): filing-based cache key, number check, run cost
+src/screener/pipeline.py   one command for everything: python -m screener.pipeline [--no-refresh]
   build.py                 writes data/memos/* and md files: python -m screener.memos.build [--refresh]
 scripts/show_memo.py           list memos, or print one by tickers or rank
 src/screener/app/          later stage
@@ -357,21 +359,74 @@ so moving to bulk downloads only changes the fetcher.
   pairs went from 15 to 12.
 - Limits of deal handling: only the latest earnings release is read, so a
   deal announced since then is missed until the next release or a manual
-  row; scoring still ranks targets within their peer group, which shifts
+  row, and a flag can disappear when a company files a second release
+  (DIOD's 2026-11-12 8-K dropped its "closed" flag for ElevATE); scoring still ranks targets within their peer group, which shifts
   other companies' percentile ranks; `pairs.deals_checked` is False and the
   build warns if the deals table has not been built.
-- Memos: `memos.parquet` has one row per top passing pair with `memo`
-  (Markdown), `fact_sheet` and `sources` (JSON), `writer` ('template') and
-  `inputs_hash` (changes when any input changes; the cache key for a future
-  model-written layer). The fact sheet is the only source of numbers. The
-  template memo has: why this pair (pillar table, top metrics for and
-  against), what each company said (latest release headline + outlook
-  excerpt), risks and caveats (deal flags, spread history, data notes,
-  first 10-K risk headings), trade construction, sources with links.
-- Template weaknesses seen on real data: the outlook excerpt is sometimes a
-  CEO quote or a lead-in to a guidance table ("...expected to be as
-  follows:") because the table itself is not prose; memos run 500-800
-  words. These are the main reasons to add the model-written layer.
+- User decisions (2026-11-13, second round): memos update automatically via
+  `screener.pipeline`; template memos are the default, for EVERY passing
+  pair, rebuilt each run; AI memos optional, top 10 only, Claude Haiku 5.5,
+  regenerated only when a pair is new or a company has a new filing; a new
+  filing = 10-K, 10-Q or earnings 8-K (item 2.02), amendments included;
+  deal-status changes also regenerate; scheduling (GitHub Actions) is Stage 6.
+- `memos.parquet`: one row per passing pair. `memo` is always the template
+  memo. `memo_ai` is the AI memo or empty; `ai_status` is generated /
+  cached / fallback / not top / off, with the reason in `ai_note`;
+  `ai_model`, `ai_written`, `filings_through`, `ai_key`. The fact sheet is
+  the only source of numbers.
+- Template memo sections: why this pair (pillar table; every metric for
+  long, short and peer median with who is stronger; biggest edges), recent
+  quarters (last four known quarters per company: revenue growth vs the
+  year-ago quarter, gross and operating margin, TTM FCF margin; derived
+  quarters marked *, recent deals flagged), what each company said, risks
+  and caveats, trade construction, sources.
+- Peer median = median across all scored companies in the group, both legs
+  included, of the metric the LONG was ranked on (so a fallback slot uses the
+  fallback metric); infinite leverage counts as highest. Needs the scores
+  area's `metrics` table.
+- Template weaknesses: outlook excerpts are sometimes a CEO quote or a
+  lead-in to a guidance table because tables are not prose; memos are
+  600-900 words with the new tables.
+- AI layer (`memos/model_writer.py`, Anthropic Python SDK >= 2.8, plain
+  `client.messages.create`):
+  - Gate: `model_writer.enabled` AND `ANTHROPIC_API_KEY` set
+    (`config.anthropic_api_key_present`; only the SDK reads the key).
+    `--template-only` skips it. Only ranks 1..`ai_pairs` (10) are sent.
+  - Request: `claude-haiku-5-5`, `output_config.effort` medium (also
+    Haiku 5.5's default), no `thinking` param (adaptive by default), no
+    temperature. Haiku has no server-side refusal fallback: a refusal falls
+    back to the template memo.
+  - Input is `facts.filing_facts(fact_sheet)`: quality and direction metrics
+    (with who is stronger), quarterly trends, deal status/evidence, data
+    notes, plus tagged filing excerpts. Valuation, prices, scores, ranks,
+    peer medians and trade statistics are deliberately excluded because they
+    move daily while the cached view does not.
+  - Output: three `###` sections (Thesis / What management said / What could
+    go wrong). `assemble` builds the AI memo: template header, "## Analyst
+    view" with a dated note, the narrative, then the template's CURRENT
+    sections (why this pair, recent quarters, risks, trade construction,
+    sources). The template's "What each company said" is dropped there.
+  - Check: every number in the narrative must match a number in the request
+    (also x100 or /100, rounded to the precision written; integers 0-12
+    always allowed). Any miss -> fallback, reason in `ai_note`. A valuation
+    multiple in the narrative fails the check because it is not in the input.
+  - Cache: `data/memos/model_cache/<key>.json` holds the narrative only.
+    key = pair_id (long/short order matters) + each leg's latest relevant
+    accession (`data.filings.latest_relevant_filing`) + each leg's deal
+    status + model + effort + max_words + PROMPT_VERSION. Bump
+    PROMPT_VERSION when the prompt changes. Failures are not cached.
+    Auth/permission errors stop further calls for the run.
+  - Run log: `data/memos/model_runs.parquet`, one row per memo build (even
+    with AI off): pairs, ai_pairs, cached, generated, fallbacks and reasons,
+    api_calls, tokens, estimated cost (prices in config/memos.yaml).
+    `scripts/show_memo.py --log`.
+- Pipeline (`screener.pipeline`): pull with `--refresh all` (ticker map,
+  companyfacts, submissions, prices: ~3 SEC requests per company), then
+  cleaning, scoring (as of today), deal check, pairs, memos. Filing
+  documents are fetched only when new (keyed by accession). Exit code 1 from
+  a step (finished with problems) does not stop the run; >= 2 or an
+  exception stops it. `--no-refresh` skips the pull. Cleaning and scoring
+  rebuild fully every run (about a minute each on 27 companies).
 - Pipeline order is now: data.pull -> cleaning.build -> scoring.build ->
   pairing.deals -> pairing.build -> memos.build.
 
@@ -408,6 +463,7 @@ python scripts/show_fundamentals.py NVDA
 python -m screener.pairing.deals                 # M&A flags from latest earnings releases (--refresh)
 python -m screener.pairing.build                 # pairs for the scores' as-of date
 python scripts/show_pairs.py [--all | LONG SHORT]
-python -m screener.memos.build                   # fetch filings for top pairs, extract sections, write memos (--refresh)
-python scripts/show_memo.py [LONG SHORT | RANK]
+python -m screener.memos.build                   # fetch filings for top pairs, extract sections, write memos (--refresh, --template-only)
+python scripts/show_memo.py [LONG SHORT | RANK] [--ai] | --log
+python -m screener.pipeline                      # everything, in order (--no-refresh to skip downloads)
 ```

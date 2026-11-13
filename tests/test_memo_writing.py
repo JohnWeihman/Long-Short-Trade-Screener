@@ -87,7 +87,7 @@ def facts_for(pair=None, deals=None):
     ("fcf_yield", 0.027, "2.7%"), ("gross_margin", 0.594, "59%"),
     ("operating_margin_change", 0.143, "+14.3 pts"), ("fcf_margin_change", -0.021, "-2.1 pts"),
     ("net_debt_to_ebitda", 1.25, "1.2x"), ("net_debt_to_ebitda", -0.3, "net cash (-0.3x)"),
-    ("net_debt_to_ebit", math.inf, "debt with no earnings"), ("roic", float("nan"), "n/a"), ("roic", None, "n/a"),
+    ("net_debt_to_ebit", math.inf, "debt with no earnings"), ("net_debt_to_ebitda", -0.04, "about zero net debt"), ("roic", float("nan"), "n/a"), ("roic", None, "n/a"),
 ])
 def test_show(metric, value, text):
     assert show(metric, value) == text
@@ -173,8 +173,11 @@ def test_memo_structure_and_numbers_come_from_the_fact_sheet():
         assert heading in text
     assert "**Composite score 0.79 vs 0.36 (gap 0.44).**" in text
     assert "| Valuation | 0.75 | 0.35 | AAA ahead |" in text
-    assert "- Operating margin change vs a year ago: +14.3 pts vs -0.5 pts" in text
-    assert "What favors BBB:" in text and "- ROIC: 43% vs 50%" in text
+    assert "| Metric | AAA | BBB | Stronger |" in text  # no peer medians without the metrics table
+    assert "| Operating margin change vs a year ago | +14.3 pts | -0.5 pts | AAA |" in text
+    assert "| ROIC | 43% | 50% | BBB |" in text and "Where BBB is stronger: ROIC." in text
+    assert "Biggest edges for AAA: Operating margin change vs a year ago, Net debt/EBITDA" in text
+    assert "## Recent quarters" in text and "**AAA**: no quarterly history available." in text
     assert "short $1.12 of BBB per $1.00 of AAA, or 0.74 BBB shares per AAA share at $245.40 and $372.53" in text
 
 
@@ -227,13 +230,14 @@ def test_build_memos_covers_top_passing_pairs_only(cache):
         pair_row("AAA", "BBB", rank=2), pair_row("AAA", "CCC", rank=1), pair_row("CCC", "BBB", passes=False),
     ])
     deals = pd.DataFrame([{"ticker": "CCC", "status": "pending_other", "evidence": "CCC agreed to acquire X."}])
-    memos = build_memos(pairs, scores, ranks, fundamentals, deals, sections, documents, MemoConfig(top_pairs=5))
+    memos = build_memos(pairs, scores, ranks, fundamentals, deals, sections, documents, MemoConfig(ai_pairs=1))
     assert list(memos.columns) == MEMO_COLUMNS
-    assert memos[["rank", "pair_id", "writer"]].values.tolist() == [[1, "AAA/CCC", "template"], [2, "AAA/BBB", "template"]]
+    # Template memos for every passing pair, whatever ai_pairs says; no writer, so AI is off.
+    assert memos[["rank", "pair_id", "ai_status"]].values.tolist() == [[1, "AAA/CCC", "off"], [2, "AAA/BBB", "off"]]
+    assert memos["memo_ai"].isna().all()
     assert "Rank 1 of 2 passing pairs" in memos.loc[0, "memo"] and "CCC is party to a pending deal" in memos.loc[0, "memo"]
     assert json.loads(memos.loc[1, "fact_sheet"])["pair_id"] == "AAA/BBB"
     assert json.loads(memos.loc[1, "sources"])[0]["release"]["accn"] == "A-E2"
-    assert len(build_memos(pairs, scores, ranks, fundamentals, None, sections, documents, MemoConfig(top_pairs=1))) == 1
 
     folder = write_markdown(cache, memos)
     assert sorted(p.name for p in folder.glob("*.md")) == ["01_AAA_CCC.md", "02_AAA_BBB.md"]

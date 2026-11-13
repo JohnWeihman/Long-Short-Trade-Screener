@@ -194,21 +194,56 @@ sections a memo needs, and writes one memo per pair. Writes to `data/memos/`:
 |-------|----------|
 | `documents` | each filing document used, with its fetch status and link |
 | `sections` | extracted text: 10-K business, risk factors, MD&A and risk headings; press-release headline, summary and outlook; each with `ok` / `problem` |
-| `memos` | one row per pair: the memo (Markdown), its fact sheet and sources as JSON, and how it was written |
+| `memos` | one row per passing pair: the template memo, the AI memo if there is one, its status and model, its fact sheet and sources as JSON |
+| `model_runs` | one row per run: API calls, cache hits, regenerations, fallbacks, tokens, estimated cost |
 
 The memos are also saved as Markdown files in `data/memos/md/`.
 
 Each memo is built from a fact sheet (scores, ratios, hedge ratio, spread,
 caveats), which holds every number the memo may use, plus quoted excerpts
-from the filings. The current writer is a fixed template. Section extraction
-is heuristic and reports what it could not find; `config/memos.yaml` sets
-how many pairs get a memo.
+from the filings. Section extraction is heuristic and reports what it could
+not find; `config/memos.yaml` sets how many pairs get a memo.
+
+There are two kinds of memo:
+
+- **Template memo** (the default, free): written for every passing pair on
+  every run, so its numbers are always current. Sections: why this pair
+  (pillar scores and every metric against the peer-group median), recent
+  quarters (revenue growth against the year-ago quarter, gross and
+  operating margin, trailing free cash flow margin), what each company said,
+  risks and caveats, trade construction, sources.
+- **AI memo** (optional, paid): when `ANTHROPIC_API_KEY` is set in `.env`,
+  Claude Haiku 5.5 writes an analyst view (thesis, what management said,
+  what could go wrong) for the top 10 pairs. It sees only facts that change
+  when a company files, never prices or valuation multiples, and is
+  regenerated only when a pair is new, either company files a 10-K, 10-Q or
+  earnings 8-K, or a deal status changes; otherwise the cached view is
+  reused at no cost. The AI memo is that dated view plus the template's
+  current figures. Every figure in the view is checked against the material
+  it was given; a view that fails the check, or any API failure, leaves the
+  pair with its template memo, and `ai_note` says why. `--template-only`
+  skips the API for a run.
+
+Every run appends a row to `data/memos/model_runs.parquet`: API calls,
+cached and regenerated views, fallbacks, tokens and estimated cost.
 
 ```
 python scripts/show_memo.py                   # list the memos
-python scripts/show_memo.py TER AMAT          # one memo
+python scripts/show_memo.py TER AMAT          # one template memo
 python scripts/show_memo.py 1                 # by rank
+python scripts/show_memo.py TER AMAT --ai     # the AI memo, if there is one
+python scripts/show_memo.py --log             # API calls per run
 ```
+
+## Update everything
+
+```
+python -m screener.pipeline                   # refresh EDGAR and prices, rebuild every table and memo
+python -m screener.pipeline --no-refresh      # rebuild from the local cache only
+```
+
+Runs the data pull, cleaning, scoring, deal check, pairs and memos in order,
+and prints how long each took. This is the command a scheduled job runs.
 
 ## Tests
 

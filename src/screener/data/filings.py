@@ -60,6 +60,23 @@ def earnings_releases(filings: pd.DataFrame, cik: int | str, as_of: pd.Timestamp
     return rows[is_earnings.astype(bool)].sort_values(["filed", "accn"], ascending=False).head(count)
 
 
+PERIODIC_FORMS = ("10-K", "10-K/A", "10-Q", "10-Q/A")
+
+
+def latest_relevant_filing(filings: pd.DataFrame, cik: int | str, as_of: pd.Timestamp) -> tuple[str | None, pd.Timestamp | None]:
+    """(accession, filing date) of the company's most recent filing that can
+    change what a memo says: a 10-K, a 10-Q, or an earnings 8-K (item 2.02),
+    amendments included. Insider-trading forms and other 8-Ks do not count."""
+    rows = filings[(filings["cik10"] == cik10(cik)) & (filings["filed"] <= as_of)]
+    items = rows["items"].fillna("").astype(str).map(lambda text: [p.strip() for p in text.split(",")])
+    earnings = rows["form"].isin(["8-K", "8-K/A"]) & items.map(lambda parts: EARNINGS_ITEM in parts).astype(bool)
+    relevant = rows[rows["form"].isin(PERIODIC_FORMS) | earnings]
+    if relevant.empty:
+        return None, None
+    latest = relevant.sort_values(["filed", "accn"]).iloc[-1]
+    return latest["accn"], latest["filed"]
+
+
 def parse_submission(text: str) -> list[dict]:
     """The documents inside a complete-submission text file:
     [{'type', 'file_name', 'description', 'text'}, ...] in filing order."""
