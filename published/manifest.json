@@ -1,5 +1,5 @@
 {
- "published_at": "2026-11-13 21:39:12 UTC",
+ "published_at": "2026-11-13 23:39:13 UTC",
  "as_of": "2026-11-13",
  "passing_pairs": 13,
  "tables": {
@@ -11,11 +11,11 @@
   "metric_ranks": 286,
   "metrics": 27,
   "metrics_quarterly": 4274,
-  "model_runs": 3,
+  "model_runs": 4,
   "pair_spreads": 9828,
   "pairs": 62,
   "peer_groups": 27,
-  "pipeline_runs": 1,
+  "pipeline_runs": 2,
   "scores": 27,
   "validation": 190
  },
