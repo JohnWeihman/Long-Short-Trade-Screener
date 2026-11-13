@@ -1,0 +1,22 @@
+{
+ "published_at": "2026-11-13 20:57:13 UTC",
+ "as_of": "2026-11-13",
+ "passing_pairs": 13,
+ "tables": {
+  "companies": 27,
+  "deals": 27,
+  "documents": 80,
+  "fundamentals": 27,
+  "memos": 13,
+  "metric_ranks": 286,
+  "metrics": 27,
+  "metrics_quarterly": 4274,
+  "model_runs": 2,
+  "pair_spreads": 9828,
+  "pairs": 62,
+  "peer_groups": 27,
+  "scores": 27,
+  "validation": 190
+ },
+ "model_cache_entries": 0
+}

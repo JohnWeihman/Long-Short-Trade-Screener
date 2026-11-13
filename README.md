@@ -6,9 +6,9 @@ where one company scores well and a close peer scores poorly.
 
 Data is free only: SEC EDGAR for fundamentals and filings, yfinance for prices.
 
-**Status: Stages 1 to 5 (raw data pull; cleaned quarterly and annual
-financials; peer groups and scores; pairs with hedge ratios; template
-memos).** The Streamlit app and the scheduled pipeline come later. See
+**Status: Stages 1 to 6 (raw data pull; cleaned quarterly and annual
+financials; peer groups and scores; pairs with hedge ratios; memos; the web
+app and the daily schedule).** See
 [CLAUDE.md](CLAUDE.md) for the full design, constraints and known data quirks.
 
 ## Setup
@@ -242,8 +242,45 @@ python -m screener.pipeline                   # refresh EDGAR and prices, rebuil
 python -m screener.pipeline --no-refresh      # rebuild from the local cache only
 ```
 
-Runs the data pull, cleaning, scoring, deal check, pairs and memos in order,
-and prints how long each took. This is the command a scheduled job runs.
+Runs the data pull, a price-freshness check, cleaning, scoring, deal check,
+pairs and memos in order, and prints how long each took. `--publish` also
+writes `published/` for the web app; that is what the scheduled job runs.
+Every run is logged to `data/logs/pipeline_runs.parquet`.
+
+## The web app
+
+```
+python -m screener.publish                    # copy the app's tables from data/ to published/
+streamlit run streamlit_app.py                # open http://localhost:8501
+```
+
+The app reads only `published/` (about 0.7 MB, committed to the
+repository): ranked pairs, pair detail with the memo, spread and quarterly
+charts and a peers comparison, peer-group tables, and a data-status page with
+the pipeline and API call logs, deal flags and data checks. It never
+downloads data or calls an API.
+
+## Daily schedule and hosting
+
+`.github/workflows/pipeline.yml` runs on GitHub Actions at 23:00 UTC,
+Monday to Friday (and on demand from the Actions tab): tests, then
+`python -m screener.pipeline --publish`, then a commit of `published/`.
+Streamlit Community Cloud redeploys on that commit. If anything fails, nothing
+is committed and the site keeps the previous day's data.
+
+One-time setup:
+
+1. Create a **private** GitHub repository and push this project to it
+   (`main` branch).
+2. In the repository: Settings > Secrets and variables > Actions, add
+   `SEC_USER_AGENT` (your name and email, as in `.env`) and, optionally,
+   `ANTHROPIC_API_KEY`.
+3. Actions tab > Daily pipeline > Run workflow, to check it works.
+4. At share.streamlit.io, sign in with GitHub, choose Create app, pick the
+   repository, branch `main`, main file `streamlit_app.py`, and the same
+   Python version as the workflow (3.14). An app from a private repository is
+   private; add viewers by email under Share. A free account can have one
+   private app at a time.
 
 ## Tests
 
@@ -268,7 +305,10 @@ src/screener/pairing/   candidate pairs, correlation filter, hedge ratios, sprea
 config/deals.csv        manual merger and acquisition flags
 config/memos.yaml       how many pairs get a memo
 src/screener/memos/     filing text extraction, fact sheets and memos
-src/screener/app/       later stage
+src/screener/app/       the Streamlit app (started by streamlit_app.py)
+src/screener/pipeline.py, publish.py   run everything; copy results to published/
+published/              the app's data, committed daily by the scheduled job
+.github/workflows/      the daily schedule
 scripts/                command-line helpers
 tests/
 data/                   local cache (git-ignored)

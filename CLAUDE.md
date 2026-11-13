@@ -34,7 +34,7 @@ the stage the user asks for.**
 | 3 | Peer groups, derived fundamentals, metrics, within-group scores | built and committed (on `main`) |
 | 4 | Candidate pairs, correlation filter, beta-adjusted hedge ratios, spread series | built and committed (on `main`) |
 | 5 | Memos from 10-K sections and 8-K earnings press releases | built on branch `stage-5-memos`; template layer committed (dd74eff); peer medians, quarterly trends, Haiku AI layer, run log and `screener.pipeline` not yet committed. AI layer not yet run against the API (no ANTHROPIC_API_KEY on this machine as of 2026-11-13) |
-| 6+ | Streamlit app, GitHub Actions | not started |
+| 6 | Streamlit app, publish step, GitHub Actions schedule, hosting on Streamlit Community Cloud | built on branch `stage-6-app`, not committed; app checked locally; workflow not yet run (no GitHub repository yet) |
 
 ## Hard constraints
 
@@ -117,7 +117,14 @@ src/screener/memos/        Stage 5
 src/screener/pipeline.py   one command for everything: python -m screener.pipeline [--no-refresh]
   build.py                 writes data/memos/* and md files: python -m screener.memos.build [--refresh]
 scripts/show_memo.py           list memos, or print one by tickers or rank
-src/screener/app/          later stage
+src/screener/app/          Stage 6 web app (reads published/ only)
+  data.py                  load published tables; shape them for pages (pure functions, tested)
+  charts.py                Altair charts: spread, quarterly trends (dataviz reference palette)
+  main.py                  pages: Pairs, Pair detail, Peer groups, Data status
+streamlit_app.py           Streamlit entry point (adds src/ to sys.path)
+src/screener/publish.py    data/ -> published/ (+ --restore of run state); python -m screener.publish
+published/                 committed app data (~0.7 MB) + AI memo cache + run logs
+.github/workflows/pipeline.yml   weekdays 23:00 UTC: tests, pipeline --publish, commit published/
 scripts/check_company.py   prints revenue / net income / shares for latest FY (raw data)
 scripts/trace_metric.py    a cleaned metric next to the raw facts behind it
 tests/                     pytest, no network access
@@ -430,6 +437,40 @@ so moving to bulk downloads only changes the fetcher.
 - Pipeline order is now: data.pull -> cleaning.build -> scoring.build ->
   pairing.deals -> pairing.build -> memos.build.
 
+## Stage 6 decisions and findings
+
+- User decisions (2026-11-13): published data committed to `main` under
+  `published/`; schedule weekdays 23:00 UTC; access via Streamlit's viewer
+  list only (private repo -> private app; one private app per free account,
+  confirmed in Streamlit docs 2026-11-13); tests run before every publish.
+- `published/` holds only small results tables (metrics_quarterly cut to 7
+  lines and 6 fiscal years) plus run state: the AI memo cache
+  (`model_cache/*.json`, union of published and local so entries are never
+  lost), `model_runs`, `pipeline_runs`, and `manifest.json` (as_of,
+  published_at, row counts). `publish.restore` fills data/ from published/
+  before every pipeline run, never overwriting local files, so a fresh
+  runner does not pay again for AI memos.
+- Pipeline additions: "price check" step after the pull fails the run (exit
+  2) when more than 10% of the universe has no price within 5 days, so a
+  Yahoo block on cloud runners never publishes stale results; `--publish`
+  adds a final publish step, then republishes once more so published/
+  includes this run's log line. Exit 1 ("problems") still publishes; the
+  workflow only fails on >= 2.
+- App: reads `published/` (or SCREENER_PUBLISHED_DIR). Pages via a sidebar
+  radio (key "page") rather than st.navigation, so AppTest can drive them.
+  Data cached with st.cache_data keyed on manifest.published_at. Charts use
+  `theme=None` and their own palette (slot 1 blue = long, slot 2 orange =
+  short; light/dark steps chosen from `st.context.theme.type`). The dataviz
+  validator needs Node, which is not installed here; the two slots are the
+  reference palette's documented-validated slots, used unchanged.
+- Streamlit 1.67: `use_container_width` is deprecated; use width="stretch".
+- Known display quirk: a peer median of a valuation multiple is the inverse
+  of the median yield, so with loss-makers in the group it can be extreme
+  (CRUS/SWKS group median P/E 354x = LSCC's).
+- The workflow pins actions/checkout@v4, setup-python@v5, cache@v4 and
+  Python 3.14 to match local; `data/raw` is carried in actions/cache keyed
+  per run with a prefix restore key.
+
 ## Working rules
 
 - Propose a plan first and wait for the user's approval before writing code.
@@ -465,5 +506,7 @@ python -m screener.pairing.build                 # pairs for the scores' as-of d
 python scripts/show_pairs.py [--all | LONG SHORT]
 python -m screener.memos.build                   # fetch filings for top pairs, extract sections, write memos (--refresh, --template-only)
 python scripts/show_memo.py [LONG SHORT | RANK] [--ai] | --log
-python -m screener.pipeline                      # everything, in order (--no-refresh to skip downloads)
+python -m screener.pipeline                      # everything, in order (--no-refresh to skip downloads, --publish for the app)
+python -m screener.publish                       # data/ -> published/ (--restore: published/ -> data/)
+streamlit run streamlit_app.py                   # the app, http://localhost:8501
 ```
