@@ -1,0 +1,10 @@
+# Settings for Stage 5 (memos).
+
+# Memos are written for this many of the top-ranked passing pairs.
+top_pairs: 10
+
+# Earnings press releases (8-K item 2.02) fetched per company, newest first.
+press_release_quarters: 4
+
+# Risk-factor headings quoted per company.
+risk_headings: 3

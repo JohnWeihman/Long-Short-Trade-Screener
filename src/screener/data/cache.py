@@ -69,6 +69,11 @@ class Cache:
         """file_name is the SEC's, e.g. 'CIK0000320193.json'."""
         return self.root / "raw" / "edgar" / "submissions" / f"{_safe_name(file_name)}.gz"
 
+    def filing_path(self, cik: int | str, accession: str, file_name: str) -> Path:
+        """One document of one filing, e.g. the 10-K's main HTML file."""
+        folder = self.root / "raw" / "edgar" / "filings" / f"CIK{cik10(cik)}" / _safe_name(accession)
+        return folder / f"{_safe_name(file_name)}.gz"
+
     def prices_path(self, source: str, ticker: str) -> Path:
         name = _safe_name(ticker.upper())
         return self.root / "raw" / "prices" / _safe_name(source) / f"{name}.parquet"

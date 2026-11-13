@@ -19,6 +19,14 @@ min_correlation: 0.50
 #                           config/peer_groups.csv (sector-neutral, no extra data)
 beta_benchmark: universe_equal_weight
 
+# ---- Mergers and acquisitions -------------------------------------------
+# A company being acquired trades on the deal terms, not its fundamentals.
+# Deal flags come from `python -m screener.pairing.deals` (latest earnings
+# release) and config/deals.csv (manual overrides). When this is true, any
+# pair with a pending acquisition target on either side is excluded.
+# Acquirers and recently completed deals are flagged in the notes only.
+exclude_pending_targets: true
+
 # ---- Spread series ------------------------------------------------------
 # Trading days of hedged-spread history to save for charts.
 spread_history_days: 756

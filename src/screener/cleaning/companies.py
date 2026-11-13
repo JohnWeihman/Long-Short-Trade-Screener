@@ -9,7 +9,7 @@ import pandas as pd
 
 from screener.data.cache import Cache, cik10, read_gz_json
 
-FILING_COLUMNS = ["cik10", "accn", "form", "filed", "report_date", "primary_document", "file_number"]
+FILING_COLUMNS = ["cik10", "accn", "form", "filed", "report_date", "primary_document", "file_number", "items"]
 _SEC_FIELDS = {
     "accn": "accessionNumber",
     "form": "form",
@@ -17,6 +17,7 @@ _SEC_FIELDS = {
     "report_date": "reportDate",
     "primary_document": "primaryDocument",
     "file_number": "fileNumber",
+    "items": "items",  # 8-K item codes, e.g. "2.02,9.01" (2.02 = results of operations)
 }
 
 DOMESTIC_ANNUAL = ("10-K", "10-KT")

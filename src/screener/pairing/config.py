@@ -27,6 +27,7 @@ class PairingConfig:
     beta_benchmark: str = "universe_equal_weight"
     spread_history_days: int = 756
     spread_zscore_window_days: int = 252
+    exclude_pending_targets: bool = True
 
 
 def parse_pairing_config(raw: dict) -> PairingConfig:

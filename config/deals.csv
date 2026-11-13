@@ -1,0 +1,11 @@
+# Manual deal flags. A row here overrides what the screener detects from
+# earnings press releases (python -m screener.pairing.deals).
+#
+# status:
+#   pending_target   the company is being acquired: its pairs are excluded
+#   pending_other    party to a pending deal (e.g. the acquirer): flagged only
+#   closed           recently completed a deal; results not comparable: flagged only
+#   none             no deal (use this to clear a wrong detection)
+ticker,status,note
+TXN,pending_other,"Acquiring Silicon Labs, per SLAB's earnings release filed 2026-11-10 (not detected in TXN's own release)"
+ON,pending_other,"Acquiring Synaptics, per SYNA's earnings release filed 2026-11-05 (not detected in ON's own release)"

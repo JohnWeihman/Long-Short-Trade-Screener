@@ -6,9 +6,9 @@ where one company scores well and a close peer scores poorly.
 
 Data is free only: SEC EDGAR for fundamentals and filings, yfinance for prices.
 
-**Status: Stages 1 to 4 (raw data pull; cleaned quarterly and annual
-financials; peer groups and scores; pairs with hedge ratios).** Memos, the
-Streamlit app and the scheduled pipeline come later. See
+**Status: Stages 1 to 5 (raw data pull; cleaned quarterly and annual
+financials; peer groups and scores; pairs with hedge ratios; template
+memos).** The Streamlit app and the scheduled pipeline come later. See
 [CLAUDE.md](CLAUDE.md) for the full design, constraints and known data quirks.
 
 ## Setup
@@ -148,6 +148,7 @@ python scripts/show_fundamentals.py TXN          # market cap, EV, EBITDA, ROIC 
 ## Build the pairs
 
 ```
+python -m screener.pairing.deals              # flag companies in mergers and acquisitions
 python -m screener.pairing.build
 ```
 
@@ -155,6 +156,7 @@ Uses the scores table's as-of date. Writes to `data/pairs/`:
 
 | Table | Contents |
 |-------|----------|
+| `deals` | each company's deal status, read from its latest earnings press release, with the sentence that triggered it |
 | `pairs` | every candidate pair within a peer group: score gaps, correlation, betas, hedge ratio, spread statistics, whether it passes, and why not |
 | `pair_spreads` | daily hedged-spread history for the passing pairs |
 
@@ -165,10 +167,47 @@ short per dollar long) is the long's beta divided by the short's, measured
 against an equal-weighted index of the universe. Thresholds are in
 `config/pairing.yaml`.
 
+A company that is being acquired trades on the deal terms, not on its
+fundamentals, so pairs with an acquisition target on either side are
+excluded (they stay in the table with the reason). Acquirers and recently
+completed deals are noted but kept. Detection reads only the latest earnings
+release and is keyword-based, so it can miss or misread a deal:
+`config/deals.csv` is where you correct it by hand.
+
 ```
 python scripts/show_pairs.py                  # ranked pairs that pass
 python scripts/show_pairs.py --all            # every candidate, with the reason it failed
 python scripts/show_pairs.py TER AMAT         # one pair side by side, with the hedge arithmetic
+```
+
+## Write the memos
+
+```
+python -m screener.memos.build
+```
+
+For the companies in the top-ranked pairs this downloads (once, then cached)
+the latest 10-K and the last four earnings press releases, extracts the
+sections a memo needs, and writes one memo per pair. Writes to `data/memos/`:
+
+| Table | Contents |
+|-------|----------|
+| `documents` | each filing document used, with its fetch status and link |
+| `sections` | extracted text: 10-K business, risk factors, MD&A and risk headings; press-release headline, summary and outlook; each with `ok` / `problem` |
+| `memos` | one row per pair: the memo (Markdown), its fact sheet and sources as JSON, and how it was written |
+
+The memos are also saved as Markdown files in `data/memos/md/`.
+
+Each memo is built from a fact sheet (scores, ratios, hedge ratio, spread,
+caveats), which holds every number the memo may use, plus quoted excerpts
+from the filings. The current writer is a fixed template. Section extraction
+is heuristic and reports what it could not find; `config/memos.yaml` sets
+how many pairs get a memo.
+
+```
+python scripts/show_memo.py                   # list the memos
+python scripts/show_memo.py TER AMAT          # one memo
+python scripts/show_memo.py 1                 # by rank
 ```
 
 ## Tests
@@ -191,7 +230,10 @@ config/scoring.yaml     pillars, weights and thresholds
 src/screener/scoring/   peer groups, fundamentals, ratios, ranks and scores
 config/pairing.yaml     pair thresholds and windows
 src/screener/pairing/   candidate pairs, correlation filter, hedge ratios, spreads
-src/screener/memos/  app/     later stages
+config/deals.csv        manual merger and acquisition flags
+config/memos.yaml       how many pairs get a memo
+src/screener/memos/     filing text extraction, fact sheets and memos
+src/screener/app/       later stage
 scripts/                command-line helpers
 tests/
 data/                   local cache (git-ignored)

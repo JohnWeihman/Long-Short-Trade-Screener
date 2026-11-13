@@ -29,11 +29,12 @@ the stage the user asks for.**
 
 | Stage | Scope | Status |
 |-------|-------|--------|
-| 1 | Project setup; raw data pull (ticker->CIK, companyfacts, submissions, prices) into local cache; hand-check script | built, not yet committed |
-| 2 | Cleaning: tag fallback mapping, Q4 derivation, restatement dedup, filer-type handling | built, not yet committed. Known limits are listed under "Known problems" below and in the `validation` table |
+| 1 | Project setup; raw data pull (ticker->CIK, companyfacts, submissions, prices) into local cache; hand-check script | built and committed (on `main`) |
+| 2 | Cleaning: tag fallback mapping, Q4 derivation, restatement dedup, filer-type handling | built and committed (on `main`). Known limits are listed under "Known problems" below and in the `validation` table |
 | 3 | Peer groups, derived fundamentals, metrics, within-group scores | built and committed (on `main`) |
-| 4 | Candidate pairs, correlation filter, beta-adjusted hedge ratios, spread series | built on branch `stage-4-pairing`, not yet committed |
-| 5+ | Memos from 10-K sections and 8-K press releases, Streamlit app, GitHub Actions | not started |
+| 4 | Candidate pairs, correlation filter, beta-adjusted hedge ratios, spread series | built and committed (on `main`) |
+| 5 | Memos from 10-K sections and 8-K earnings press releases | in progress on branch `stage-5-memos`, not committed: filing fetch, section extraction, deal flags, fact sheet and template memos done; the optional model-written layer is not built |
+| 6+ | Streamlit app, GitHub Actions | not started |
 
 ## Hard constraints
 
@@ -101,9 +102,20 @@ src/screener/pairing/      Stage 4
   stats.py                 correlation, beta, hedge ratio, share ratio
   spread.py                daily hedged spread, z-score and recent moves
   report.py                plain-text ranked table and pair detail
+  deals.py                 M&A flags from each company's latest earnings release: python -m screener.pairing.deals
   build.py                 writes data/pairs/*: python -m screener.pairing.build
+config/deals.csv           manual deal flags; override the detection
 scripts/show_pairs.py          ranked pairs, all candidates with reasons, or one pair in detail
-src/screener/memos/  app/     later stages
+config/memos.yaml          Stage 5: how many pairs, press-release quarters, risk headings
+src/screener/data/filings.py   fetch filing documents (10-K main document, 8-K complete submission); pick which
+src/screener/memos/        Stage 5
+  extract.py               filing HTML -> paragraphs; 10-K Items 1 / 1A / 7; press-release headline, summary, outlook
+  sources.py               select, fetch and extract the documents for the top pairs' companies
+  facts.py                 fact sheet per pair: every number a memo may use (plain JSON-able data)
+  write.py                 template memo (Markdown) from fact sheet + filing excerpts; inputs hash
+  build.py                 writes data/memos/* and md files: python -m screener.memos.build [--refresh]
+scripts/show_memo.py           list memos, or print one by tickers or rank
+src/screener/app/          later stage
 scripts/check_company.py   prints revenue / net income / shares for latest FY (raw data)
 scripts/trace_metric.py    a cleaned metric next to the raw facts behind it
 tests/                     pytest, no network access
@@ -306,6 +318,63 @@ so moving to bulk downloads only changes the fetcher.
 - Not built: cointegration, liquidity/borrow screens, earnings dates,
   backtesting. The last weekly bar can be a partial week.
 
+## Stage 5 decisions and findings
+
+- User decisions (2026-11): template memo first, then an optional
+  model-written layer (off unless an API key is in `.env`; numbers only from
+  the fact sheet; cached; template is the fallback); top 10 passing pairs;
+  `beautifulsoup4` (+ `lxml`) for HTML.
+- Sources: the latest 10-K's main document, and for the last four earnings
+  8-Ks (item code 2.02 in the filing index's new `items` column) the
+  complete submission `<accession>.txt`, from which exhibit EX-99.1 is
+  taken. Cached under `data/raw/edgar/filings/CIK##########/<accession>/`.
+- Tables: `data/memos/documents.parquet` (one row per document, with fetch
+  status) and `data/memos/sections.parquet` (section text, `ok`, `problem`).
+- Extraction is heuristic. 10-K items are found by line-start "Item N"
+  headings, taking the occurrence followed by the most text (skips the table
+  of contents). Risk headings are bold passages inside Item 1A (none found
+  for SLAB and POWI, which do not bold them). Press-release outlook falls
+  back to expectation sentences when there is no "Outlook"/"Guidance"
+  heading, so it can pick up a quote instead of the guidance table (TER,
+  NXPI); MPWR's exhibit is an earnings commentary, not a press release.
+- IMPORTANT, found in the press releases as of 2026-11: SLAB has a pending
+  acquisition by Texas Instruments and SYNA by onsemi (both are short legs
+  of top-ranked pairs: CRUS/SYNA, CRUS/SLAB, LSCC/SYNA). SWKS's latest
+  release confirms the Qorvo combination closed, so its financials are no
+  longer comparable with prior periods.
+- Deal handling (user decision 2026-11-13: flag and exclude targets).
+  `pairing/deals.py` reads the latest earnings release of every scored
+  company and sets a status: `pending_target` (pairs excluded when
+  `exclude_pending_targets` is true), `pending_other` (acquirer or other
+  party; note only), `closed` (recent completed deal; note only), `none`.
+  A target needs both pending-deal language in a sentence about M&A and a
+  sign it is the one being bought (guidance or call suspended, "to be
+  acquired by", or the deal phrase naming the company's first name word).
+  Legal boilerplate paragraphs are ignored. `config/deals.csv` overrides.
+  As of 2026-11-11: targets SLAB, SYNA; acquirer MRVL (Lumentum), plus TXN
+  and ON by manual override (their own releases did not trigger); closed
+  SWKS (Qorvo), LSCC (AMI), MCHP (Hailo, Vorago), DIOD (ElevATE). Passing
+  pairs went from 15 to 12.
+- Limits of deal handling: only the latest earnings release is read, so a
+  deal announced since then is missed until the next release or a manual
+  row; scoring still ranks targets within their peer group, which shifts
+  other companies' percentile ranks; `pairs.deals_checked` is False and the
+  build warns if the deals table has not been built.
+- Memos: `memos.parquet` has one row per top passing pair with `memo`
+  (Markdown), `fact_sheet` and `sources` (JSON), `writer` ('template') and
+  `inputs_hash` (changes when any input changes; the cache key for a future
+  model-written layer). The fact sheet is the only source of numbers. The
+  template memo has: why this pair (pillar table, top metrics for and
+  against), what each company said (latest release headline + outlook
+  excerpt), risks and caveats (deal flags, spread history, data notes,
+  first 10-K risk headings), trade construction, sources with links.
+- Template weaknesses seen on real data: the outlook excerpt is sometimes a
+  CEO quote or a lead-in to a guidance table ("...expected to be as
+  follows:") because the table itself is not prose; memos run 500-800
+  words. These are the main reasons to add the model-written layer.
+- Pipeline order is now: data.pull -> cleaning.build -> scoring.build ->
+  pairing.deals -> pairing.build -> memos.build.
+
 ## Working rules
 
 - Propose a plan first and wait for the user's approval before writing code.
@@ -336,6 +405,9 @@ python -m screener.scoring.peers                 # peer groups vs residual retur
 python -m screener.scoring.build                 # fundamentals, metrics, ranks, scores (--as-of DATE)
 python scripts/show_scores.py [GROUP|TICKER]
 python scripts/show_fundamentals.py NVDA
+python -m screener.pairing.deals                 # M&A flags from latest earnings releases (--refresh)
 python -m screener.pairing.build                 # pairs for the scores' as-of date
 python scripts/show_pairs.py [--all | LONG SHORT]
+python -m screener.memos.build                   # fetch filings for top pairs, extract sections, write memos (--refresh)
+python scripts/show_memo.py [LONG SHORT | RANK]
 ```

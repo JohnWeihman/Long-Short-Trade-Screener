@@ -4,7 +4,8 @@
 
 Pairs are built for the same as-of date as the scores table; to change it,
 re-run `python -m screener.scoring.build --as-of DATE` first. Reads only
-local files.
+local files. Run `python -m screener.pairing.deals` beforehand so that
+acquisition targets are flagged and excluded.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from screener import config
-from screener.cleaning.store import read_table, write_table
+from screener.cleaning.store import read_table, table_path, write_table
 from screener.data.cache import Cache
 from screener.data.prices import load_prices
 from screener.pairing.candidates import candidate_pairs
@@ -28,17 +29,26 @@ from screener.scoring.peers import residual_returns, weekly_returns
 
 AREA = "pairs"
 SCORES_AREA = "scores"
+DEAL_NOTES = {
+    "pending_target": "BEING ACQUIRED (pending deal)",
+    "pending_other": "party to a pending deal",
+    "closed": "recently completed a deal; results may not be comparable",
+}
 
 
 def evaluate_pairs(
     candidates: pd.DataFrame, weekly: pd.DataFrame, daily: dict[str, pd.Series],
     price_now: dict[str, float], notes: dict[str, str], cfg: PairingConfig,
+    deals: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(pairs with statistics and pass/fail reasons, spread series of passing pairs).
 
     weekly: weekly returns, one column per company, already cut to the
-    correlation window. daily: daily return series per ticker.
+    correlation window. daily: daily return series per ticker. deals maps
+    ticker -> deal status (see pairing/deals.py); None means no deal check
+    has been run.
     """
+    deals = deals or {}
     benchmark = equal_weight_benchmark(weekly)
     beta_by = betas(weekly, benchmark, cfg.min_overlap_weeks)
     residual = residual_returns(weekly).corr(min_periods=cfg.min_overlap_weeks)
@@ -67,9 +77,16 @@ def evaluate_pairs(
                            else f"correlation {corr:.2f} below {cfg.min_correlation:.2f}")
         if not passes_hedge:
             reasons.append("no usable hedge ratio")
+        status = {t: deals.get(t, "none") for t in (long, short)}
+        targets = [t for t in (long, short) if status[t] == "pending_target"]
+        passes_deal = not (targets and cfg.exclude_pending_targets)
+        if not passes_deal:
+            reasons.append(" and ".join(targets) + (" is" if len(targets) == 1 else " are")
+                           + " being acquired (pending deal)")
         passes = not reasons
 
-        pair_notes = [f"{t}: {notes[t]}" for t in (long, short) if notes.get(t)]
+        pair_notes = [f"{t}: {DEAL_NOTES[status[t]]}" for t in (long, short) if status[t] in DEAL_NOTES]
+        pair_notes += [f"{t}: {notes[t]}" for t in (long, short) if notes.get(t)]
         if pair.thin_group:
             pair_notes.insert(0, "thin peer group")
         rows.append({
@@ -81,7 +98,9 @@ def evaluate_pairs(
             "pair_beta": beta(weekly[long], weekly[short], cfg.min_overlap_weeks) if have else float("nan"),
             "price_long": prices[0], "price_short": prices[1], "share_ratio": share_ratio(ratio, *prices),
             **spread_stats(spread, cfg.spread_zscore_window_days),
-            "passes_correlation": passes_correlation, "passes_hedge": passes_hedge, "passes": passes,
+            "deal_long": status[long], "deal_short": status[short],
+            "passes_correlation": passes_correlation, "passes_hedge": passes_hedge,
+            "passes_deal": passes_deal, "passes": passes,
             "reasons": "; ".join(reasons), "notes": " | ".join(pair_notes),
         })
         if passes:
@@ -108,11 +127,17 @@ def build(cache: Cache) -> dict[str, pd.DataFrame]:
     daily = {t: daily_returns(p, as_of) for t, p in prices.items()}
     by_ticker = fundamentals.set_index("ticker")
 
+    # Deal flags are optional input: without them every company counts as clear.
+    deals = None
+    if table_path(cache, "deals", AREA).exists():
+        deals = read_table(cache, "deals", AREA).set_index("ticker")["status"].to_dict()
+
     pairs, spreads = evaluate_pairs(
         candidate_pairs(scores, cfg), weekly, daily,
-        by_ticker["price"].to_dict(), by_ticker["notes"].fillna("").to_dict(), cfg,
+        by_ticker["price"].to_dict(), by_ticker["notes"].fillna("").to_dict(), cfg, deals,
     )
     pairs["as_of"] = as_of
+    pairs["deals_checked"] = deals is not None
     tables = {"pairs": pairs, "pair_spreads": spreads}
     for name, frame in tables.items():
         write_table(cache, name, frame, AREA)
@@ -134,7 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Pairs as of {as_of:%Y-%m-%d}: {len(pairs)} candidates within peer groups")
     print(f"  {int(pairs['passes_gap'].sum()):>3} clear the score gap")
     print(f"  {int((pairs['passes_gap'] & pairs['passes_pillars']).sum()):>3} also have enough pillars favoring the long")
-    print(f"  {int(pairs['passes'].sum()):>3} also clear the correlation filter and have a hedge ratio\n")
+    score_ok = pairs["passes_gap"] & pairs["passes_pillars"]
+    print(f"  {int((score_ok & pairs['passes_correlation'] & pairs['passes_hedge']).sum()):>3} "
+          f"also clear the correlation filter and have a hedge ratio")
+    if pairs["deals_checked"].iloc[0]:
+        print(f"  {int(pairs['passes'].sum()):>3} also have no acquisition target on either side\n")
+    else:
+        print("\nWARNING: no deal check has been run, so acquisition targets are not excluded.\n"
+              "         Run: python -m screener.pairing.deals   and then this command again.\n")
     print(pairs_table(pairs))
     print(f"\nSpread history saved for {tables['pair_spreads']['pair_id'].nunique()} pairs. "
           f"Written to {cache.root / AREA}")
