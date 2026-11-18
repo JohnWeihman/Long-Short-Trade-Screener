@@ -1,6 +1,6 @@
 {
- "published_at": "2026-11-17 23:46:40 UTC",
- "as_of": "2026-11-17",
+ "published_at": "2026-11-18 23:46:57 UTC",
+ "as_of": "2026-11-18",
  "passing_pairs": 13,
  "tables": {
   "companies": 27,
@@ -11,11 +11,11 @@
   "metric_ranks": 286,
   "metrics": 27,
   "metrics_quarterly": 4274,
-  "model_runs": 6,
+  "model_runs": 7,
   "pair_spreads": 9828,
   "pairs": 62,
   "peer_groups": 27,
-  "pipeline_runs": 4,
+  "pipeline_runs": 5,
   "scores": 27,
   "validation": 190
  },
