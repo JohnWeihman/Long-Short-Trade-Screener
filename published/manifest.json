@@ -1,23 +1,23 @@
 {
- "published_at": "2026-11-23 23:47:49 UTC",
- "as_of": "2026-11-23",
- "passing_pairs": 14,
+ "published_at": "2026-11-24 23:47:39 UTC",
+ "as_of": "2026-11-24",
+ "passing_pairs": 12,
  "tables": {
   "companies": 27,
   "deals": 27,
-  "documents": 90,
+  "documents": 80,
   "fundamentals": 27,
-  "memos": 14,
+  "memos": 12,
   "metric_ranks": 286,
   "metrics": 27,
-  "metrics_quarterly": 4274,
-  "model_runs": 10,
-  "pair_spreads": 10584,
+  "metrics_quarterly": 4281,
+  "model_runs": 11,
+  "pair_spreads": 9072,
   "pairs": 62,
   "peer_groups": 27,
-  "pipeline_runs": 8,
+  "pipeline_runs": 9,
   "scores": 27,
-  "validation": 190
+  "validation": 188
  },
  "model_cache_entries": 0
 }
